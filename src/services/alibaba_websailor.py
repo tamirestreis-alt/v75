@@ -72,6 +72,32 @@ class AlibabaWebSailorAgent:
 
         self.session = requests.Session()
         self.session.headers.update(self.headers)
+        # Configuração SSL mais robusta
+        self.session.verify = True  # Mantém verificação SSL por padrão
+        
+        # Configuração de timeout e retry
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        
+        try:
+            # Tenta usar o parâmetro novo (urllib3 >= 1.26.0)
+            retry_strategy = Retry(
+                total=3,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["HEAD", "GET", "OPTIONS"],
+                backoff_factor=1
+            )
+        except TypeError:
+            # Fallback para versões antigas do urllib3
+            retry_strategy = Retry(
+                total=3,
+                status_forcelist=[429, 500, 502, 503, 504],
+                method_whitelist=["HEAD", "GET", "OPTIONS"],
+                backoff_factor=1
+            )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
 
         # Estatísticas de navegação
         self.navigation_stats = {
@@ -899,6 +925,7 @@ class AlibabaWebSailorAgent:
         """Extrai links internos relevantes"""
 
         try:
+            # Tenta primeiro com verificação SSL
             response = self.session.get(base_url, timeout=10)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.content, 'html.parser')
@@ -918,6 +945,38 @@ class AlibabaWebSailorAgent:
                         links.append(full_url)
 
                 return list(set(links))[:10]
+        except requests.exceptions.SSLError as ssl_error:
+            logger.warning(f"⚠️ Erro SSL ao extrair links de {base_url}: {str(ssl_error)}")
+            # Tenta novamente sem verificação SSL como fallback
+            try:
+                temp_session = requests.Session()
+                temp_session.headers.update(self.headers)
+                temp_session.verify = False
+                import urllib3
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                
+                response = temp_session.get(base_url, timeout=10)
+                if response.status_code == 200:
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    base_domain = urlparse(base_url).netloc
+
+                    links = []
+                    for a_tag in soup.find_all('a', href=True):
+                        href = a_tag['href']
+                        full_url = urljoin(base_url, href)
+
+                        if (full_url.startswith('http') and
+                            base_domain in full_url and
+                            "#" not in full_url and
+                            full_url != base_url and
+                            not any(ext in full_url.lower() for ext in ['.pdf', '.jpg', '.png', '.gif'])):
+                            links.append(full_url)
+
+                    logger.info(f"✅ Links extraídos sem SSL de {base_url}: {len(links)} links")
+                    return list(set(links))[:10]
+            except Exception as fallback_error:
+                logger.error(f"❌ Erro no fallback SSL para {base_url}: {str(fallback_error)}")
+                return []
         except Exception as e:
             logger.error(f"❌ Erro ao extrair links internos de {base_url}: {str(e)}")
             return []

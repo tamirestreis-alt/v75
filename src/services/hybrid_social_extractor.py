@@ -27,6 +27,7 @@ try:
     SCRAPY_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"⚠️ Scrapy não disponível: {e}")
+    logger.info("💡 Para usar Scrapy, instale: pip install scrapy scrapy-splash")
     SCRAPY_AVAILABLE = False
 
 from .enhanced_api_rotation_manager import get_api_manager

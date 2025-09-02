@@ -756,8 +756,18 @@ class PlaywrightSocialImageExtractor:
         screenshots_dir = Path(f"analyses_data/files/{session_id}")
         screenshots_dir.mkdir(parents=True, exist_ok=True)
 
+        # Verifica se o browser e context estão disponíveis
+        if not self.context:
+            logger.error("❌ Context não disponível para capturar screenshots")
+            return screenshots
+
         for i, url in enumerate(urls):
             try:
+                # Verifica se o context ainda está válido
+                if not self.context:
+                    logger.error(f"❌ Context perdido durante captura do screenshot {i+1}")
+                    break
+                    
                 page = await self.context.new_page()
                 await page.goto(url, timeout=self.config['timeout'])
                 await page.wait_for_timeout(2000)
@@ -820,7 +830,7 @@ class PlaywrightSocialImageExtractor:
         except Exception as e:
             logger.error(f"❌ Playwright Viral: Erro: {e}")
             results['error'] = str(e)
-        finally:
+            # Só fecha o browser em caso de erro
             await self.stop_browser()
 
         return results
