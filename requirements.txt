@@ -149,3 +149,7 @@ chromedriver==2.24.1
 
 
 playwright
+
+# Scrapy and Splash for web scraping
+scrapy>=2.11.0
+scrapy-splash>=0.8.0
