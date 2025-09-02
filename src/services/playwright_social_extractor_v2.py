@@ -840,23 +840,9 @@ class PlaywrightSocialImageExtractor:
         viral_content = []
 
         try:
-            # Simula conteúdo viral do Instagram
-            for i in range(min(max_items, 5)):
-                content = {
-                    'platform': 'instagram',
-                    'type': 'post',
-                    'url': f'https://instagram.com/p/viral_{query}_{i}/',
-                    'title': f'Post viral sobre {query}',
-                    'engagement': {
-                        'likes': 1000 + i * 500,
-                        'comments': 100 + i * 50,
-                        'shares': 50 + i * 25
-                    },
-                    'virality_score': 0.8 + (i * 0.02),
-                    'extracted_at': datetime.now().isoformat(),
-                    'content_type': 'image_post'
-                }
-                viral_content.append(content)
+            # Sem simulação: retorna vazio se não houver coleta real anterior
+            # Esta função deve ser alimentada por outras rotinas reais quando disponíveis
+            pass
 
         except Exception as e:
             logger.error(f"❌ Erro ao extrair Instagram viral: {e}")
@@ -868,23 +854,8 @@ class PlaywrightSocialImageExtractor:
         viral_content = []
 
         try:
-            # Simula conteúdo viral do YouTube
-            for i in range(min(max_items, 5)):
-                content = {
-                    'platform': 'youtube',
-                    'type': 'video',
-                    'url': f'https://youtube.com/watch?v=viral_{query}_{i}',
-                    'title': f'Vídeo viral: {query} - Tutorial Completo',
-                    'engagement': {
-                        'views': 10000 + i * 5000,
-                        'likes': 500 + i * 250,
-                        'comments': 75 + i * 40
-                    },
-                    'virality_score': 0.85 + (i * 0.01),
-                    'extracted_at': datetime.now().isoformat(),
-                    'content_type': 'video'
-                }
-                viral_content.append(content)
+            # Sem simulação: não gera vídeos falsos
+            pass
 
         except Exception as e:
             logger.error(f"❌ Erro ao extrair YouTube viral: {e}")
@@ -896,23 +867,8 @@ class PlaywrightSocialImageExtractor:
         viral_content = []
 
         try:
-            # Simula conteúdo viral do TikTok
-            for i in range(min(max_items, 3)):
-                content = {
-                    'platform': 'tiktok',
-                    'type': 'video',
-                    'url': f'https://tiktok.com/@user/video/viral_{query}_{i}',
-                    'title': f'#{query} viral no TikTok',
-                    'engagement': {
-                        'views': 50000 + i * 10000,
-                        'likes': 2000 + i * 800,
-                        'shares': 300 + i * 150
-                    },
-                    'virality_score': 0.9 + (i * 0.01),
-                    'extracted_at': datetime.now().isoformat(),
-                    'content_type': 'short_video'
-                }
-                viral_content.append(content)
+            # Sem simulação
+            pass
 
         except Exception as e:
             logger.error(f"❌ Erro ao extrair TikTok viral: {e}")

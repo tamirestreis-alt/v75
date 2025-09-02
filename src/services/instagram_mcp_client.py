@@ -31,13 +31,13 @@ class InstagramMCPClient:
         if self.is_available:
             logger.info("✅ Instagram MCP Client ATIVO")
         else:
-            logger.warning("⚠️ Instagram API não configurada - usando fallback")
+            logger.warning("⚠️ Instagram API não configurada - sem simulação")
 
     async def search_instagram_content(self, query: str, hashtags: List[str] = None) -> Dict[str, Any]:
         """Busca conteúdo no Instagram"""
         try:
             if not self.is_available:
-                return self._create_fallback_instagram_data(query, hashtags)
+                return {"success": False, "provider": "instagram", "data": [], "total_found": 0, "query": query, "message": "Instagram API ausente"}
 
             logger.info(f"📸 Buscando no Instagram: {query}")
 
@@ -59,12 +59,12 @@ class InstagramMCPClient:
                 data = response.json()
                 return self._process_instagram_results(data, query)
             else:
-                logger.warning(f"⚠️ Instagram API erro {response.status_code} - usando fallback")
-                return self._create_fallback_instagram_data(query, hashtags)
+                logger.warning(f"⚠️ Instagram API erro {response.status_code}")
+                return {"success": False, "provider": "instagram", "data": [], "total_found": 0, "query": query, "message": f"HTTP {response.status_code}"}
 
         except Exception as e:
             logger.error(f"❌ Erro Instagram: {e}")
-            return self._create_fallback_instagram_data(query, hashtags)
+            return {"success": False, "provider": "instagram", "data": [], "total_found": 0, "query": query, "message": str(e)}
 
     def _process_instagram_results(self, data: Dict[str, Any], query: str) -> Dict[str, Any]:
         """Processa resultados do Instagram"""
@@ -94,32 +94,8 @@ class InstagramMCPClient:
         }
 
     def _create_fallback_instagram_data(self, query: str, hashtags: List[str] = None) -> Dict[str, Any]:
-        """Cria dados de fallback para Instagram"""
-        fallback_data = [
-            {
-                'id': 'fallback_1',
-                'caption': f'Post relevante sobre {query} com análise de tendências e insights do mercado brasileiro.',
-                'media_type': 'IMAGE',
-                'like_count': 150,
-                'comment_count': 25,
-                'timestamp': '2024-08-01T12:00:00Z',
-                'permalink': f'https://instagram.com/p/example1',
-                'username': 'analista_mercado',
-                'hashtags': hashtags or [f'#{query.replace(" ", "")}', '#mercado', '#brasil'],
-                'platform': 'instagram',
-                'query_used': query,
-                'fallback': True
-            }
-        ]
-
-        return {
-            "success": True,
-            "provider": "instagram_fallback",
-            "data": fallback_data,
-            "total_found": len(fallback_data),
-            "query": query,
-            "message": "Usando dados simulados devido à indisponibilidade da API"
-        }
+        """Mantido por compatibilidade – sem simulação."""
+        return {"success": False, "provider": "instagram", "data": [], "total_found": 0, "query": query}
 
     def _extract_hashtags_from_caption(self, caption: str) -> List[str]:
         """Extrai hashtags do caption"""

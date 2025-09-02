@@ -44,7 +44,8 @@ class SupadataClient:
     
     def __init__(self):
         self.session = httpx.AsyncClient(timeout=60.0)
-        self.base_url = os.getenv('SUPADATA_BASE_URL', 'https://api.supadata.com/v1')
+        # Usa SUPADATA_API_URL (preferencial) ou SUPADATA_BASE_URL, com default correto .ai
+        self.base_url = os.getenv('SUPADATA_API_URL') or os.getenv('SUPADATA_BASE_URL') or 'https://api.supadata.ai/v1'
         self.api_key = os.getenv('SUPADATA_API_KEY', '')
         self.cache = {}
         self.rate_limit_delay = 1.0  # segundos entre requests

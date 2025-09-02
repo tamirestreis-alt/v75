@@ -80,11 +80,13 @@ class SocialMediaExtractor:
             "query": query,
             "platforms": ["youtube", "twitter", "instagram", "linkedin"],
             "total_results": 0,
-            "youtube": self._simulate_youtube_data(query, max_results_per_platform),
-            "twitter": self._simulate_twitter_data(query, max_results_per_platform),
-            "instagram": self._simulate_instagram_data(query, max_results_per_platform),
-            "linkedin": self._simulate_linkedin_data(query, max_results_per_platform),
-            "search_quality": "simulated",
+            # Em modo real/data-only, não geramos simulações.
+            # Mantemos as chaves vazias para compatibilidade com consumidores.
+            "youtube": {"success": False, "results": []},
+            "twitter": {"success": False, "results": []},
+            "instagram": {"success": False, "results": []},
+            "linkedin": {"success": False, "results": []},
+            "search_quality": "none",
             "generated_at": datetime.now().isoformat()
         }
 

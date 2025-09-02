@@ -1446,30 +1446,38 @@ class RealSearchOrchestrator:
         return report
 
     def _generate_fallback_social_results(self, query: str, platform: str) -> Dict[str, Any]:
-        """Gera resultados de fallback quando APIs sociais falham"""
-        logger.info(f"🔄 Gerando resultados de fallback para {platform}")
-        
-        # Simula alguns resultados baseados na query para manter o fluxo funcionando
-        fallback_results = []
-        
-        # Gera alguns resultados simulados baseados na query
-        keywords = query.lower().split()
-        for i in range(3):
-            fallback_results.append({
-                'title': f"Conteúdo relacionado a {' '.join(keywords[:2])} - Post {i+1}",
-                'url': f"https://{platform}.com/fallback_post_{i+1}",
-                'content': f"Conteúdo simulado sobre {query} - dados não disponíveis devido a problemas de API",
+        """Gera resultado sem simulação quando APIs falham (respeita DISABLE_FALLBACKS/FORCE_REAL_DATA)."""
+        disable_fallbacks = str(os.getenv('DISABLE_FALLBACKS', 'false')).lower() == 'true' or \
+                             str(os.getenv('FORCE_REAL_DATA', 'false')).lower() == 'true'
+        if disable_fallbacks:
+            logger.info(f"⛔ Fallbacks desativados – retornando lista vazia para {platform}")
+            return {
+                'success': False,
+                'provider': platform.upper(),
                 'platform': platform,
-                'author': f"usuario_{platform}_{i+1}",
-                'likes': 100 * (i + 1),
-                'comments': 10 * (i + 1),
-                'shares': 5 * (i + 1),
-                'published_at': datetime.now().isoformat(),
-                'viral_score': 2.0 + i,
-                'relevance_score': 0.5,
-                'is_fallback': True
-            })
-        
+                'results': [],
+                'is_fallback': True,
+                'fallback_reason': 'fallbacks_disabled'
+            }
+
+        logger.info(f"🔄 Gerando resultados de fallback para {platform}")
+        # Modo legado: gerar placeholders mínimos (mantido apenas se fallbacks permitidos)
+        keywords = query.lower().split()
+        fallback_results = [{
+            'title': f"Conteúdo relacionado a {' '.join(keywords[:2])} - Post {i+1}",
+            'url': f"https://{platform}.com/fallback_post_{i+1}",
+            'content': f"Conteúdo simulado sobre {query} - dados não disponíveis devido a problemas de API",
+            'platform': platform,
+            'author': f"usuario_{platform}_{i+1}",
+            'likes': 100 * (i + 1),
+            'comments': 10 * (i + 1),
+            'shares': 5 * (i + 1),
+            'published_at': datetime.now().isoformat(),
+            'viral_score': 2.0 + i,
+            'relevance_score': 0.5,
+            'is_fallback': True
+        } for i in range(3)]
+
         return {
             'success': True,
             'provider': platform.upper(),
