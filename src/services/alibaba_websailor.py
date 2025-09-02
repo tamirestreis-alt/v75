@@ -1158,3 +1158,7 @@ class AlibabaWebSailorAgent:
 
 # Instância global
 alibaba_websailor = AlibabaWebSailorAgent()
+
+def get_alibaba_websailor():
+    """Retorna a instância global do Alibaba WebSailor Agent"""
+    return alibaba_websailor

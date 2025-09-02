@@ -171,12 +171,12 @@ class EnhancedModuleProcessor:
                         contexto_estrategico=base_data.get('contexto_estrategico', {}),
                         dados_web=base_data.get('dados_web', {})
                     )
-                    
+
                     # Salva conteúdo do módulo CPL em formato JSON e Markdown
                     cpl_json_path = modules_dir / f"{module_name}.json"
                     with open(cpl_json_path, 'w', encoding='utf-8') as f:
                         json.dump(cpl_content, f, ensure_ascii=False, indent=2)
-                    
+
                     # Cria versão Markdown do conteúdo CPL
                     cpl_md_content = self._format_cpl_content_to_markdown(cpl_content)
                     cpl_md_path = modules_dir / f"{module_name}.md"
@@ -247,7 +247,7 @@ class EnhancedModuleProcessor:
             avatar_data = {}
             contexto_estrategico = {}
             dados_web = {}
-            
+
             # Tenta carregar a síntese master
             sintese_master_file = session_dir / "sintese_master_synthesis.json"
             if sintese_master_file.exists():
@@ -256,7 +256,7 @@ class EnhancedModuleProcessor:
                         sintese_master = json.load(f)
                 except Exception as e:
                     logger.warning(f"⚠️ Erro ao carregar síntese master: {e}")
-            
+
             # Tenta carregar dados do avatar
             avatar_file = session_dir / "avatar_detalhado.json"
             if avatar_file.exists():
@@ -265,7 +265,7 @@ class EnhancedModuleProcessor:
                         avatar_data = json.load(f)
                 except Exception as e:
                     logger.warning(f"⚠️ Erro ao carregar dados do avatar: {e}")
-            
+
             # Tenta carregar contexto estratégico
             contexto_file = session_dir / "contexto_estrategico.json"
             if contexto_file.exists():
@@ -274,7 +274,7 @@ class EnhancedModuleProcessor:
                         contexto_estrategico = json.load(f)
                 except Exception as e:
                     logger.warning(f"⚠️ Erro ao carregar contexto estratégico: {e}")
-            
+
             # Tenta carregar dados da web
             web_data_file = session_dir / "dados_pesquisa_web.json"
             if web_data_file.exists():
@@ -356,45 +356,45 @@ Gere um conteúdo extremamente detalhado e prático.
             for fase_key, fase_data in fases.items():
                 markdown_content += f"## {fase_data.get('titulo', fase_key)}\n\n"
                 markdown_content += f"**{fase_data.get('descricao', '')}**\n\n"
-                
+
                 # Adiciona seções específicas de cada fase
                 if 'estrategia' in fase_data:
                     markdown_content += f"### Estratégia\n{fase_data['estrategia']}\n\n"
-                
+
                 if 'versoes_evento' in fase_data:
                     markdown_content += "### Versões do Evento\n"
                     for versao in fase_data['versoes_evento']:
                         markdown_content += f"- **{versao.get('nome_evento', '')}** ({versao.get('tipo', '')}): {versao.get('justificativa_psicologica', '')}\n"
                     markdown_content += "\n"
-                
+
                 if 'teasers' in fase_data:
                     markdown_content += "### Teasers\n"
                     for teaser in fase_data['teasers']:
                         markdown_content += f"- {teaser.get('texto', '')} (*{teaser.get('justificativa', '')}*)\n"
                     markdown_content += "\n"
-                
+
                 if 'historia_transformacao' in fase_data:
                     ht = fase_data['historia_transformacao']
                     markdown_content += "### História de Transformação\n"
                     markdown_content += f"- **Antes**: {ht.get('antes', '')}\n"
                     markdown_content += f"- **Durante**: {ht.get('durante', '')}\n"
                     markdown_content += f"- **Depois**: {ht.get('depois', '')}\n\n"
-                
+
                 # Adiciona outras seções conforme necessário...
                 markdown_content += "---\n\n"
-            
+
             # Adiciona considerações finais
             consideracoes = cpl_content.get('consideracoes_finais', {})
             if consideracoes:
                 markdown_content += "## Considerações Finais\n\n"
                 markdown_content += f"**Impacto Previsto**: {consideracoes.get('impacto_previsto', '')}\n\n"
-                
+
                 if consideracoes.get('diferenciais'):
                     markdown_content += "### Diferenciais\n"
                     for diferencial in consideracoes['diferenciais']:
                         markdown_content += f"- {diferencial}\n"
                     markdown_content += "\n"
-                
+
                 if consideracoes.get('proximos_passos'):
                     markdown_content += "### Próximos Passos\n"
                     for passo in consideracoes['proximos_passos']:
@@ -402,7 +402,7 @@ Gere um conteúdo extremamente detalhado e prático.
                     markdown_content += "\n"
 
             return markdown_content
-            
+
         except Exception as e:
             logger.error(f"❌ Erro ao formatar conteúdo CPL para Markdown: {e}")
             return "# Protocolo de CPLs Devastadores\n\n*Erro ao gerar conteúdo formatado*"
@@ -443,7 +443,7 @@ Este relatório consolida {results['successful_modules']} módulos especializado
                                 title = cpl_data.get('titulo', self.modules_config[module_name]['title'])
                                 descricao = cpl_data.get('descricao', '')
                                 consolidated_content += f"\n## {title}\n\n{descricao}\n\n"
-                                
+
                                 # Adiciona um resumo das fases
                                 fases = cpl_data.get('fases', {})
                                 if fases:
@@ -468,7 +468,7 @@ Este relatório consolida {results['successful_modules']} módulos especializado
                                 lines = content.split('\n')
                                 summary_lines = []
                                 in_executive_summary = False
-                                
+
                                 for line in lines:
                                     if line.startswith('# ') and 'Resumo Executivo' in line:
                                         in_executive_summary = True
@@ -477,7 +477,7 @@ Este relatório consolida {results['successful_modules']} módulos especializado
                                         break
                                     elif in_executive_summary:
                                         summary_lines.append(line)
-                                
+
                                 if summary_lines:
                                     consolidated_content += f"\n## {title}\n\n" + '\n'.join(summary_lines[1:10]) + "\n\n"
                                 else:
@@ -503,7 +503,7 @@ Este relatório consolida {results['successful_modules']} módulos especializado
 
         except Exception as e:
             logger.error(f"❌ Erro ao gerar relatório consolidado: {e}")
-            salvar_erro("relatorio_consolidado", e, contexto={"session_id": session_id})
+            salvar_erro("relatorio_consolidado", e)
 
 # Instância global
 enhanced_module_processor = EnhancedModuleProcessor()

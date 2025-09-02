@@ -265,6 +265,7 @@ class RealViralImageExtractor:
         Extrai dados REAIS de vídeos do HTML do YouTube
         """
         videos = []
+        seen_video_ids = set()
         
         try:
             # Padrões para extrair dados reais
@@ -277,6 +278,11 @@ class RealViralImageExtractor:
             views = re.findall(views_pattern, html_content)
             
             for i, video_id in enumerate(video_ids):
+                # Evita duplicatas
+                if video_id in seen_video_ids:
+                    continue
+                seen_video_ids.add(video_id)
+                
                 title = titles[i] if i < len(titles) else f"Vídeo {video_id}"
                 view_count = views[i] if i < len(views) else "N/A"
                 
@@ -380,10 +386,16 @@ class RealViralImageExtractor:
                 else:
                     ext = 'jpg'
                 
-                # Nome único
-                timestamp = int(time.time())
-                filename = f"{platform}_real_{identifier}_{timestamp}.{ext}"
+                # Nome único baseado no hash para evitar duplicatas
+                import hashlib
+                content_hash = hashlib.md5(response.content).hexdigest()[:8]
+                filename = f"{platform}_real_{identifier}_{content_hash}.{ext}"
                 local_path = os.path.join(self.images_dir, platform, filename)
+                
+                # Verifica se já existe
+                if os.path.exists(local_path):
+                    logger.info(f"⚠️ Imagem já existe: {filename}")
+                    return local_path
                 
                 # Salva imagem
                 with open(local_path, 'wb') as f:

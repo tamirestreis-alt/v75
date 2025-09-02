@@ -27,6 +27,13 @@ from services.trendfinder_client import trendfinder_client
 from services.supadata_mcp_client import supadata_client
 from services.visual_content_capture import visual_content_capture
 
+# Novos imports para Google Masterclass Extractor
+from .enhanced_api_rotation_manager import get_api_manager
+from .alibaba_websailor import alibaba_websailor
+from .hybrid_social_extractor import extract_viral_content_hybrid
+from .viral_content_analyzer_insta import get_viral_content_analyzer
+from .google_social_masterclass_extractor import extract_masterclass_content, generate_masterclass_report
+
 class RealSearchOrchestrator:
     """Orquestrador de busca REAL massiva - ZERO SIMULAÇÃO"""
     def __init__(self):
@@ -37,7 +44,7 @@ class RealSearchOrchestrator:
         self.providers = [
             'ALIBABA_WEBSAILOR',  # Adicionado como prioridade máxima
             'FIRECRAWL',
-            'JINA', 
+            'JINA',
             'GOOGLE',
             'EXA',
             'SERPER',
@@ -165,7 +172,7 @@ class RealSearchOrchestrator:
             try:
                 # Usa método existente do social_media_extractor
                 social_results = social_media_extractor.search_all_platforms(query, 15)
-                
+
                 # Adapta formato para compatibilidade
                 if social_results.get("success"):
                     social_results = {
@@ -190,15 +197,42 @@ class RealSearchOrchestrator:
                     "all_platforms_data": {"platforms": {}},
                     "total_posts": 0
                 }
-                
+
             massive_data["social_media_data"] = social_results
 
-            # FASE 5: Seleção de URLs Relevantes
-            logger.info("🎯 FASE 5: Selecionando URLs mais relevantes...")
+            # FASE 5: Google Masterclass Search
+            logger.info("🎯 FASE 5: Busca Google Masterclass")
+
+            masterclass_results = {}
+            try:
+                masterclass_results = await extract_masterclass_content(
+                    query,
+                    session_id,
+                    ['instagram', 'youtube', 'facebook']
+                )
+                logger.info(f"✅ Google Masterclass: {masterclass_results.get('total_screenshots', 0)} screenshots capturados")
+            except Exception as e:
+                logger.error(f"❌ Erro no Google Masterclass: {e}")
+                masterclass_results = {'error': str(e)}
+
+            # FASE 6: Análise de conteúdo viral
+            logger.info("🔥 FASE 6: Analisando conteúdo viral identificado")
+
+            viral_analysis_results = {}
+            if search_results.get('viral_content'): # Verifica search_results aqui
+                analyzer = get_viral_content_analyzer()
+                viral_analysis_results = await analyzer.analyze_instagram_viral_content(
+                    {'results': search_results['viral_content']},
+                    session_id,
+                    max_screenshots=10
+                )
+
+            # FASE 7: Seleção de URLs Relevantes (para screenshots gerais)
+            logger.info("🎯 FASE 7: Selecionando URLs mais relevantes (geral)...")
             selected_urls = visual_content_capture.select_top_urls(search_results, max_urls=8)
 
-            # FASE 6: Captura de Screenshots
-            logger.info("📸 FASE 6: Capturando screenshots das URLs selecionadas...")
+            # FASE 8: Captura de Screenshots (gerais)
+            logger.info("📸 FASE 8: Capturando screenshots das URLs selecionadas (geral)...")
             if selected_urls:
                 try:
                     screenshot_results = await visual_content_capture.capture_screenshots(
@@ -207,15 +241,15 @@ class RealSearchOrchestrator:
                     massive_data["visual_content"] = screenshot_results
                     massive_data["statistics"]["screenshot_count"] = screenshot_results.get("successful_captures", 0)
                 except Exception as capture_error:
-                    logger.error(f"❌ Erro na captura de screenshots: {capture_error}")
+                    logger.error(f"❌ Erro na captura de screenshots (geral): {capture_error}")
                     massive_data["visual_content"] = {"success": False, "error": str(capture_error)}
                     massive_data["statistics"]["screenshot_count"] = 0
             else:
-                logger.warning("⚠️ Nenhuma URL selecionada para screenshots")
+                logger.warning("⚠️ Nenhuma URL selecionada para screenshots (geral)")
                 massive_data["visual_content"] = {"success": False, "error": "Nenhuma URL disponível"}
 
-            # FASE 7: Consolidação e Processamento
-            logger.info("🔗 FASE 7: Consolidando dados coletados...")
+            # FASE 9: Consolidação e Processamento
+            logger.info("🔗 FASE 9: Consolidando dados coletados...")
 
             # Extrai e processa conteúdo
             all_results = []
@@ -227,7 +261,7 @@ class RealSearchOrchestrator:
             # Processa resultados sociais existentes - CORRIGIDO
             if social_results.get("all_platforms_data"):
                 platforms = social_results["all_platforms_data"].get("platforms", {})
-                
+
                 # Verifica se platforms é um dict ou list
                 if isinstance(platforms, dict):
                     # Se é dict, itera pelos items
@@ -254,6 +288,15 @@ class RealSearchOrchestrator:
                 posts = massive_data["supadata_results"].get("posts", [])
                 all_results.extend([{"source": "Supadata", "content": post} for post in posts])
 
+            # Adiciona resultados do Google Masterclass
+            if masterclass_results and not masterclass_results.get('error'):
+                if masterclass_results.get('instagram_posts'):
+                    all_results.extend(masterclass_results['instagram_posts'])
+                if masterclass_results.get('youtube_videos'):
+                    all_results.extend(masterclass_results['youtube_videos'])
+                if masterclass_results.get('facebook_posts'):
+                    all_results.extend(masterclass_results['facebook_posts'])
+
             massive_data["extracted_content"] = all_results
 
             # Calcula estatísticas finais
@@ -267,15 +310,23 @@ class RealSearchOrchestrator:
                 "social_media_fallback": self._count_social_results(social_results),
                 "trendfinder_mcp": len(massive_data["trends_data"].get("trends", [])),
                 "supadata_mcp": massive_data["supadata_results"].get("total_results", 0),
-                "screenshots": massive_data["statistics"]["screenshot_count"]
+                "screenshots_gerais": massive_data["statistics"]["screenshot_count"],
+                "masterclass_capturas": masterclass_results.get('total_screenshots', 0) if masterclass_results else 0,
+                "viral_analysis_capturas": viral_analysis_results.get('screenshots_captured', 0) if viral_analysis_results else 0
             }
+
+            # Tenta consolidar as estatísticas de api_rotations de todos os serviços
+            final_api_rotations = {}
+            if search_results.get("statistics", {}).get("api_calls_made"):
+                final_api_rotations['web_search'] = search_results["statistics"]["api_calls_made"]
+            # Adicionar outras rotações de API se disponíveis em outros módulos
 
             massive_data["statistics"].update({
                 "total_sources": total_sources,
                 "total_content_length": total_content,
                 "collection_time": collection_time,
                 "sources_by_type": sources_by_type,
-                "api_rotations": search_results.get("statistics", {}).get("api_calls_made", 0)
+                "api_rotations": final_api_rotations # Usa as rotações consolidadas
             })
 
             # Gera relatório de coleta com referências às imagens
@@ -287,7 +338,10 @@ class RealSearchOrchestrator:
             logger.info(f"✅ COLETA MASSIVA COMPLETA CONCLUÍDA")
             logger.info(f"📊 {total_sources} fontes coletadas em {collection_time:.2f}s")
             logger.info(f"📝 {total_content:,} caracteres de conteúdo")
-            logger.info(f"📸 {massive_data['statistics']['screenshot_count']} screenshots capturados")
+            logger.info(f"📸 {massive_data['statistics']['screenshot_count']} screenshots gerais capturados")
+            logger.info(f"📸 {masterclass_results.get('total_screenshots', 0)} screenshots masterclass capturados")
+            logger.info(f"🔥 {viral_analysis_results.get('screenshots_captured', 0)} screenshots de análise viral capturados")
+
 
             return massive_data
 
@@ -301,7 +355,7 @@ class RealSearchOrchestrator:
         try:
             platforms = social_results.get("all_platforms_data", {}).get("platforms", {})
             total_count = 0
-            
+
             if isinstance(platforms, dict):
                 for data in platforms.values():
                     if isinstance(data, dict) and "results" in data:
@@ -314,15 +368,15 @@ class RealSearchOrchestrator:
                         elif "data" in platform_data and isinstance(platform_data["data"], dict):
                             results = platform_data["data"].get("results", [])
                             total_count += len(results)
-            
+
             return total_count
         except Exception as e:
             logger.error(f"Erro ao contar resultados sociais: {e}")
             return 0
 
     async def execute_massive_real_search(
-        self, 
-        query: str, 
+        self,
+        query: str,
         context: Dict[str, Any],
         session_id: str
     ) -> Dict[str, Any]:
@@ -391,8 +445,12 @@ class RealSearchOrchestrator:
             if 'YOUTUBE' in self.api_keys:
                 social_tasks.append(self._search_youtube(query))
             # Supadata (Instagram, Facebook, TikTok)
-            # if 'SUPADATA' in self.api_keys:
-            #     social_tasks.append(self._search_supadata(query))
+            if 'SUPADATA' in self.api_keys:
+                 social_tasks.append(self._search_supadata(query))
+            # Twitter/X
+            if 'X' in self.api_keys:
+                social_tasks.append(self._search_twitter(query))
+
             # Executa buscas sociais
             if social_tasks:
                 social_results = await asyncio.gather(*social_tasks, return_exceptions=True)
@@ -403,44 +461,49 @@ class RealSearchOrchestrator:
                     if result.get('success'):
                         if result.get('platform') == 'youtube':
                             search_results['youtube_results'].extend(result.get('results', []))
-                        else:
+                        elif result.get('platform') == 'twitter':
+                            search_results['social_results'].extend(result.get('results', [])) # Twitter vai para social_results
+                        elif result.get('platform') == 'instagram' or result.get('platform') == 'facebook' or result.get('platform') == 'tiktok':
+                            search_results['social_results'].extend(result.get('results', [])) # Supadata vai para social_results
+                        else: # Para outros provedores sociais sem plataforma definida
                             search_results['social_results'].extend(result.get('results', []))
-            # FASE 4: Identificação de Conteúdo Viral
+
+            # FASE 4: Identificação de Conteúdo Viral (com base nos resultados sociais agregados)
             logger.info("🔥 FASE 4: Identificando conteúdo viral")
-            viral_content = self._identify_viral_content(
-                search_results['youtube_results'] + search_results['social_results']
-            )
-            search_results['viral_content'] = viral_content
-            # FASE 5: Captura de Screenshots
+            all_social_and_youtube = search_results['youtube_results'] + search_results['social_results']
+            viral_content = self._identify_viral_content(all_social_and_youtube)
+            search_results['viral_content'] = viral_content # Armazena os posts virais identificados
+
+            # FASE 5: Captura de Screenshots do conteúdo viral identificado
             logger.info("📸 FASE 5: Capturando screenshots do conteúdo viral")
             if viral_content:
                 screenshots = await self._capture_viral_screenshots(viral_content, session_id)
                 search_results['screenshots_captured'] = screenshots
-                self.session_stats['screenshots_captured'] = len(screenshots)
+                self.session_stats['screenshots_captured'] = len(screenshots) # Atualiza estatística global
+
             # Calcula estatísticas finais
             search_duration = time.time() - start_time
-            all_results = search_results['web_results'] + search_results['social_results'] + search_results['youtube_results']
-            unique_urls = list(set(r.get('url', '') for r in all_results if r.get('url')))
+            all_results_for_stats = search_results['web_results'] + search_results['social_results'] + search_results['youtube_results']
+            unique_urls = list(set(r.get('url', '') for r in all_results_for_stats if r.get('url')))
             search_results['statistics'].update({
-                'total_sources': len(all_results),
+                'total_sources': len(all_results_for_stats),
                 'unique_urls': len(unique_urls),
-                'content_extracted': sum(len(r.get('content', '')) for r in all_results),
-                'api_calls_made': sum(self.session_stats['api_rotations'].values()),
+                'content_extracted': sum(len(r.get('content', '')) for r in all_results_for_stats),
+                'api_calls_made': sum(self.session_stats['api_rotations'].values()), # Soma todas as rotações de API
                 'search_duration': search_duration
             })
             logger.info(f"✅ BUSCA REAL MASSIVA CONCLUÍDA em {search_duration:.2f}s")
-            logger.info(f"📊 {len(all_results)} resultados de {len(search_results['providers_used'])} provedores")
-            logger.info(f"📸 {len(search_results['screenshots_captured'])} screenshots capturados")
+            logger.info(f"📊 {len(all_results_for_stats)} resultados de {len(search_results['providers_used'])} provedores")
+            logger.info(f"📸 {len(search_results['screenshots_captured'])} screenshots de conteúdo viral capturados")
             return search_results
         except Exception as e:
-            logger.error(f"❌ ERRO CRÍTICO na busca massiva: {e}")
+            logger.error(f"❌ ERRO CRÍTICO na busca massiva: {e}", exc_info=True)
             raise
 
     async def _search_alibaba_websailor(self, query: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Busca REAL usando Alibaba WebSailor Agent"""
         try:
-            # Importa o agente WebSailor
-            from .alibaba_websailor import alibaba_websailor
+            # Usa a instância global do agente WebSailor
             if not alibaba_websailor or not alibaba_websailor.enabled:
                 logger.warning("⚠️ Alibaba WebSailor não está habilitado")
                 return {'success': False, 'error': 'Alibaba WebSailor não habilitado'}
@@ -556,6 +619,9 @@ class RealSearchOrchestrator:
                                 content = await response.text()
                                 extracted_results = self._extract_search_results_from_content(content, 'jina')
                                 results.extend(extracted_results)
+                            else:
+                                logger.warning(f"⚠️ Jina retornou status {response.status} para {search_url}")
+                                continue
                     except Exception as e:
                         logger.warning(f"⚠️ Erro em URL Jina {search_url}: {e}")
                         continue
@@ -574,6 +640,7 @@ class RealSearchOrchestrator:
             api_key = self.get_next_api_key('GOOGLE')
             cse_id = os.getenv('GOOGLE_CSE_ID')
             if not api_key or not cse_id:
+                logger.warning("⚠️ Google API keys não configuradas")
                 return {'success': False, 'error': 'Google API não configurada'}
             async with aiohttp.ClientSession() as session:
                 params = {
@@ -621,6 +688,7 @@ class RealSearchOrchestrator:
         try:
             api_key = self.get_next_api_key('YOUTUBE')
             if not api_key:
+                logger.warning("⚠️ YouTube API key não disponível")
                 return {'success': False, 'error': 'YouTube API key não disponível'}
             async with aiohttp.ClientSession() as session:
                 params = {
@@ -645,6 +713,7 @@ class RealSearchOrchestrator:
                         for item in data.get('items', []):
                             snippet = item.get('snippet', {})
                             video_id = item.get('id', {}).get('videoId', '')
+                            if not video_id: continue
                             # Busca estatísticas detalhadas
                             stats = await self._get_youtube_video_stats(video_id, api_key, session)
                             results.append({
@@ -700,10 +769,11 @@ class RealSearchOrchestrator:
             return {}
 
     async def _search_supadata(self, query: str) -> Dict[str, Any]:
-        """Busca REAL usando Supadata MCP"""
+        """Busca REAL usando Supadata MCP para Instagram, Facebook, TikTok"""
         try:
             api_key = self.get_next_api_key('SUPADATA')
             if not api_key:
+                logger.warning("⚠️ Supadata API key não disponível")
                 return {'success': False, 'error': 'Supadata API key não disponível'}
             async with aiohttp.ClientSession() as session:
                 headers = {
@@ -748,6 +818,7 @@ class RealSearchOrchestrator:
                         return {
                             'success': True,
                             'provider': 'SUPADATA',
+                            'platform': 'social', # Plataforma genérica para Supadata
                             'results': results
                         }
                     else:
@@ -763,6 +834,7 @@ class RealSearchOrchestrator:
         try:
             api_key = self.get_next_api_key('X')
             if not api_key:
+                logger.warning("⚠️ X API key não disponível")
                 return {'success': False, 'error': 'X API key não disponível'}
             async with aiohttp.ClientSession() as session:
                 headers = {
@@ -770,11 +842,12 @@ class RealSearchOrchestrator:
                     'Content-Type': 'application/json'
                 }
                 params = {
-                    'query': f"{query} lang:pt",
+                    'query': f"{query} lang:pt -is:retweet", # Exclui retweets
                     'max_results': 50,
-                    'tweet.fields': 'public_metrics,created_at,author_id',
-                    'user.fields': 'username,verified,public_metrics',
-                    'expansions': 'author_id'
+                    'tweet.fields': 'public_metrics,created_at,author_id,entities',
+                    'user.fields': 'username,verified,public_metrics,profile_image_url',
+                    'expansions': 'author_id',
+                    'sort_order': 'relevancy' # Tenta ordenar por relevância
                 }
                 async with session.get(
                     'https://api.twitter.com/2/tweets/search/recent',
@@ -790,24 +863,30 @@ class RealSearchOrchestrator:
                         for tweet in tweets:
                             author = users.get(tweet.get('author_id', ''), {})
                             metrics = tweet.get('public_metrics', {})
+                            # Extrai URLs do tweet, se houver
+                            tweet_url = tweet.get('id')
+                            url = f"https://twitter.com/i/status/{tweet_url}" if tweet_url else ""
+
                             results.append({
-                                'title': tweet.get('text', '')[:100],
-                                'url': f"https://twitter.com/i/status/{tweet.get('id')}",
+                                'title': tweet.get('text', '')[:100], # Usa o texto do tweet como título
+                                'url': url,
                                 'content': tweet.get('text', ''),
                                 'platform': 'twitter',
                                 'author': author.get('username', ''),
                                 'author_verified': author.get('verified', False),
+                                'author_profile_image': author.get('profile_image_url', ''),
                                 'retweets': metrics.get('retweet_count', 0),
                                 'likes': metrics.get('like_count', 0),
                                 'replies': metrics.get('reply_count', 0),
                                 'quotes': metrics.get('quote_count', 0),
                                 'published_at': tweet.get('created_at', ''),
                                 'viral_score': self._calculate_twitter_viral_score(metrics),
-                                'relevance_score': 0.75
+                                'relevance_score': 0.75 # Pontuação padrão de relevância
                             })
                         return {
                             'success': True,
                             'provider': 'X',
+                            'platform': 'twitter',
                             'results': results
                         }
                     else:
@@ -823,6 +902,7 @@ class RealSearchOrchestrator:
         try:
             api_key = self.get_next_api_key('EXA')
             if not api_key:
+                logger.warning("⚠️ Exa API key não disponível")
                 return {'success': False, 'error': 'Exa API key não disponível'}
             async with aiohttp.ClientSession() as session:
                 headers = {
@@ -877,6 +957,7 @@ class RealSearchOrchestrator:
         try:
             api_key = self.get_next_api_key('SERPER')
             if not api_key:
+                logger.warning("⚠️ Serper API key não disponível")
                 return {'success': False, 'error': 'Serper API key não disponível'}
             async with aiohttp.ClientSession() as session:
                 headers = {
@@ -934,8 +1015,8 @@ class RealSearchOrchestrator:
             if not line:
                 continue
             # Detecta títulos (linhas com mais de 20 caracteres e sem URLs)
-            if (len(line) > 20 and 
-                not line.startswith('http') and 
+            if (len(line) > 20 and
+                not line.startswith('http') and
                 not line.startswith('www') and
                 '.' not in line[:10]):
                 # Salva resultado anterior se existir
@@ -969,8 +1050,8 @@ class RealSearchOrchestrator:
             return []
         # Ordena por score viral
         sorted_content = sorted(
-            all_social_results, 
-            key=lambda x: x.get('viral_score', 0), 
+            all_social_results,
+            key=lambda x: x.get('viral_score', 0),
             reverse=True
         )
         # Seleciona top 10 conteúdos virais
@@ -1005,7 +1086,7 @@ class RealSearchOrchestrator:
             service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=chrome_options)
             # Cria diretório para screenshots
-            screenshots_dir = f"analyses_data/files/{session_id}"
+            screenshots_dir = f"analyses_data/files/{session_id}/viral_screenshots"
             os.makedirs(screenshots_dir, exist_ok=True)
             try:
                 for i, content in enumerate(viral_content, 1):
@@ -1013,43 +1094,44 @@ class RealSearchOrchestrator:
                         url = content.get('url', '')
                         if not url:
                             continue
-                        logger.info(f"📸 Capturando screenshot {i}/10: {content.get('title', 'Sem título')}")
+                        logger.info(f"📸 Capturando screenshot viral {i}/{len(viral_content)}: {content.get('title', 'Sem título')[:50]}...")
                         # Acessa a URL
                         driver.get(url)
                         # Aguarda carregamento
-                        WebDriverWait(driver, 10).until(
+                        WebDriverWait(driver, 15).until(
                             EC.presence_of_element_located((By.TAG_NAME, "body"))
                         )
-                        # Aguarda renderização completa
+                        # Aguarda renderização completa (ajustar se necessário)
                         time.sleep(3)
                         # Captura screenshot
-                        screenshot_path = f"{screenshots_dir}/viral_content_{i:02d}.png"
+                        screenshot_filename = f"viral_content_{i:02d}.png"
+                        screenshot_path = os.path.join(screenshots_dir, screenshot_filename)
                         driver.save_screenshot(screenshot_path)
                         # Verifica se foi criado
                         if os.path.exists(screenshot_path) and os.path.getsize(screenshot_path) > 0:
                             screenshots.append({
-                                'content_data': content,
-                                'screenshot_path': screenshot_path,
-                                'filename': f"viral_content_{i:02d}.png",
+                                'content_data': content, # Dados do post original
+                                'screenshot_path': screenshot_path, # Caminho relativo ou absoluto
+                                'filename': screenshot_filename,
                                 'url': url,
                                 'title': content.get('title', ''),
                                 'platform': content.get('platform', ''),
                                 'viral_score': content.get('viral_score', 0),
                                 'captured_at': datetime.now().isoformat()
                             })
-                            logger.info(f"✅ Screenshot {i} capturado: {screenshot_path}")
+                            logger.info(f"✅ Screenshot viral {i} capturado: {screenshot_path}")
                         else:
-                            logger.warning(f"⚠️ Falha ao capturar screenshot {i}")
+                            logger.warning(f"⚠️ Falha ao capturar screenshot viral {i}: arquivo vazio ou não criado.")
                     except Exception as e:
-                        logger.error(f"❌ Erro ao capturar screenshot {i}: {e}")
+                        logger.error(f"❌ Erro ao capturar screenshot viral {i} para {url}: {e}")
                         continue
             finally:
                 driver.quit()
         except ImportError:
-            logger.error("❌ Selenium não instalado - screenshots não disponíveis")
+            logger.error("❌ Selenium não instalado ou webdriver_manager - screenshots virais não disponíveis.")
             return []
         except Exception as e:
-            logger.error(f"❌ Erro na captura de screenshots: {e}")
+            logger.error(f"❌ Erro geral na captura de screenshots virais: {e}")
             return []
         return screenshots
 
@@ -1061,23 +1143,28 @@ class RealSearchOrchestrator:
             comments = int(stats.get('commentCount', 0))
             # Fórmula viral: views + (likes * 10) + (comments * 20)
             viral_score = views + (likes * 10) + (comments * 20)
-            # Normaliza para 0-10
-            return min(10.0, viral_score / 100000)
-        except:
+            # Normaliza para 0-10 (escalonamento aproximado)
+            # Ajuste o divisor com base na escala desejada
+            normalized_score = min(10.0, viral_score / 500000) # Divisor exemplo: 500k para ter um score máximo de 10
+            return round(normalized_score, 2)
+        except Exception as e:
+            logger.warning(f"Erro ao calcular viral score do YouTube: {e}")
             return 0.0
 
     def _calculate_social_viral_score(self, post: Dict[str, Any]) -> float:
-        """Calcula score viral para redes sociais"""
+        """Calcula score viral para redes sociais (Instagram, Facebook, TikTok via Supadata)"""
         try:
             likes = int(post.get('likes', 0))
             comments = int(post.get('comments', 0))
             shares = int(post.get('shares', 0))
             engagement_rate = float(post.get('engagement_rate', 0))
-            # Fórmula viral para redes sociais
+            # Fórmula viral: pondera likes, comments, shares e engagement rate
             viral_score = (likes * 1) + (comments * 5) + (shares * 10) + (engagement_rate * 1000)
             # Normaliza para 0-10
-            return min(10.0, viral_score / 10000)
-        except:
+            normalized_score = min(10.0, viral_score / 15000) # Divisor exemplo: 15k
+            return round(normalized_score, 2)
+        except Exception as e:
+            logger.warning(f"Erro ao calcular viral score social: {e}")
             return 0.0
 
     def _calculate_twitter_viral_score(self, metrics: Dict[str, Any]) -> float:
@@ -1087,21 +1174,23 @@ class RealSearchOrchestrator:
             likes = int(metrics.get('like_count', 0))
             replies = int(metrics.get('reply_count', 0))
             quotes = int(metrics.get('quote_count', 0))
-            # Fórmula viral para Twitter
+            # Fórmula viral: pondera retweets, likes, replies e quotes
             viral_score = (retweets * 10) + (likes * 2) + (replies * 5) + (quotes * 15)
             # Normaliza para 0-10
-            return min(10.0, viral_score / 5000)
-        except:
+            normalized_score = min(10.0, viral_score / 5000) # Divisor exemplo: 5k
+            return round(normalized_score, 2)
+        except Exception as e:
+            logger.warning(f"Erro ao calcular viral score do Twitter: {e}")
             return 0.0
 
     def get_session_statistics(self) -> Dict[str, Any]:
         """Retorna estatísticas da sessão atual"""
         return self.session_stats.copy()
-    
+
     async def _generate_collection_report(self, massive_data: Dict[str, Any], session_id: str):
         """Gera um relatório de coleta com referências às imagens capturadas."""
         logger.info(f"📝 Gerando relatório de coleta para sessão: {session_id}")
-        
+
         # Cria diretório da sessão
         session_dir = f"analyses_data/{session_id}"
         os.makedirs(session_dir, exist_ok=True)
@@ -1114,33 +1203,58 @@ class RealSearchOrchestrator:
                 "total_sources": massive_data["statistics"]["total_sources"],
                 "total_content_length": massive_data["statistics"]["total_content_length"],
                 "collection_duration": f"{massive_data['statistics']['collection_time']:.2f}s",
-                "screenshot_count": massive_data["statistics"]["screenshot_count"],
+                "screenshot_count": massive_data["statistics"]["screenshot_count"], # Screenshots gerais
+                "masterclass_screenshots": massive_data.get('masterclass_analysis', {}).get('total_screenshots', 0),
+                "viral_analysis_screenshots": massive_data.get('viral_analysis', {}).get('screenshots_captured', 0),
                 "api_rotations": massive_data["statistics"]["api_rotations"],
                 "sources_by_type": massive_data["statistics"]["sources_by_type"]
             },
             "visual_references": [],
             "errors": []
         }
-        
+
         # Gera relatório em Markdown
         markdown_report = self._generate_markdown_report(massive_data, session_id)
-        
+
         # Salva relatório de coleta
         report_path = f"{session_dir}/relatorio_coleta.md"
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(markdown_report)
-        
+
         logger.info(f"✅ Relatório de coleta salvo: {report_path}")
 
+        # Inclui screenshots gerais no relatório
         if massive_data["visual_content"] and massive_data["visual_content"].get("success"):
-            report_data["visual_references"] = massive_data["visual_content"].get("screenshots", [])
-            logger.info(f"🖼️ {len(report_data['visual_references'])} referências visuais incluídas no relatório.")
+            report_data["visual_references"].extend(massive_data["visual_content"].get("screenshots", []))
+            logger.info(f"🖼️ {len(massive_data['visual_content'].get('screenshots', []))} referências visuais gerais incluídas no relatório.")
         else:
             report_data["errors"].append({
-                "source": "Visual Content Capture",
-                "message": massive_data["visual_content"].get("error", "Nenhum dado de visual disponível.")
+                "source": "Visual Content Capture (Geral)",
+                "message": massive_data["visual_content"].get("error", "Nenhum dado de visual geral disponível.")
             })
-            logger.warning("🖼️ Nenhum dado visual para incluir no relatório.")
+            logger.warning("🖼️ Nenhum dado visual geral para incluir no relatório.")
+
+        # Inclui screenshots do Masterclass
+        masterclass_analysis = massive_data.get('masterclass_analysis', {})
+        if masterclass_analysis and not masterclass_analysis.get('error'):
+            report_data["visual_references"].extend(masterclass_analysis.get("screenshots", []))
+            logger.info(f"🖼️ {masterclass_analysis.get('total_screenshots', 0)} referências visuais do Masterclass incluídas no relatório.")
+        elif masterclass_analysis and masterclass_analysis.get('error'):
+            report_data["errors"].append({
+                "source": "Google Masterclass Extractor",
+                "message": masterclass_analysis.get("error", "Erro ao processar Masterclass.")
+            })
+
+        # Inclui screenshots da Análise Viral
+        viral_analysis = massive_data.get('viral_analysis', {})
+        if viral_analysis and viral_analysis.get('screenshots_captured', 0) > 0:
+            report_data["visual_references"].extend(viral_analysis.get("screenshots", []))
+            logger.info(f"🔥 {viral_analysis.get('screenshots_captured', 0)} referências visuais de Análise Viral incluídas no relatório.")
+        elif viral_analysis and viral_analysis.get('error'):
+             report_data["errors"].append({
+                "source": "Viral Content Analyzer",
+                "message": viral_analysis.get("error", "Erro ao analisar conteúdo viral.")
+            })
 
         # Adicionar erros de outras fontes, se houver
         if massive_data.get("web_search_data", {}).get("error"):
@@ -1150,77 +1264,82 @@ class RealSearchOrchestrator:
         if massive_data.get("supadata_results", {}).get("error"):
             report_data["errors"].append({"source": "Supadata", "message": massive_data["supadata_results"]["error"]})
         if massive_data.get("social_media_data", {}).get("error"):
-             report_data["errors"].append({"source": "Social Media Extractor", "message": massive_data["social_media_data"]["error"]})
+             report_data["errors"].append({"source": "Social Media Extractor (Fallback)", "message": massive_data["social_media_data"]["error"]})
 
         try:
             salvar_etapa("collection_report", report_data, categoria="relatorios")
-            logger.info("✅ Relatório de coleta gerado com sucesso.")
+            logger.info("✅ Relatório de coleta gerado e salvo com sucesso.")
         except Exception as e:
             logger.error(f"❌ Erro ao salvar relatório de coleta: {e}")
-            
+
         return report_data
-    
+
     def _generate_markdown_report(self, massive_data: Dict[str, Any], session_id: str) -> str:
         """Gera relatório em formato Markdown"""
-        
+
         report = f"""# RELATÓRIO DE COLETA DE DADOS - ARQV30 Enhanced v3.0
 
-**Sessão:** {session_id}  
-**Query:** {massive_data.get('query', 'N/A')}  
+**Sessão:** `{session_id}`  
+**Query:** `{massive_data.get('query', 'N/A')}`  
 **Iniciado em:** {massive_data.get('collection_started', 'N/A')}  
-**Duração:** {massive_data.get('statistics', {}).get('collection_time', 0):.2f} segundos
+**Duração Total:** {massive_data.get('statistics', {}).get('collection_time', 0):.2f} segundos
 
 ---
 
 ## RESUMO DA COLETA
 
 ### Estatísticas Gerais:
-- **Total de Fontes:** {massive_data.get('statistics', {}).get('total_sources', 0)}
-- **Conteúdo Coletado:** {massive_data.get('statistics', {}).get('total_content_length', 0):,} caracteres
-- **Screenshots:** {massive_data.get('statistics', {}).get('screenshot_count', 0)}
-- **APIs Utilizadas:** {len(massive_data.get('statistics', {}).get('api_rotations', {}))}
+- **Total de Fontes Coletadas:** {massive_data.get('statistics', {}).get('total_sources', 0)}
+- **Total de Caracteres:** {massive_data.get('statistics', {}).get('total_content_length', 0):,}
+- **Screenshots Gerais:** {massive_data.get('statistics', {}).get('screenshot_count', 0)}
+- **Screenshots Masterclass:** {massive_data.get('masterclass_analysis', {}).get('total_screenshots', 0)}
+- **Screenshots Análise Viral:** {massive_data.get('viral_analysis', {}).get('screenshots_captured', 0)}
+- **APIs Utilizadas (Rotações):** {json.dumps(massive_data.get('statistics', {}).get('api_rotations', {}))}
 
 ### Fontes por Tipo:
 """
-        
+
         # Adiciona estatísticas por tipo
         sources_by_type = massive_data.get('statistics', {}).get('sources_by_type', {})
-        # Corrigido: Verifica se sources_by_type é um dicionário antes de iterar
         if isinstance(sources_by_type, dict):
-            for source_type, count in sources_by_type.items():
+            sorted_sources = sorted(sources_by_type.items(), key=lambda item: item[1], reverse=True)
+            for source_type, count in sorted_sources:
                 report += f"- **{source_type.replace('_', ' ').title()}:** {count}\n"
         else:
-            # Se não for um dicionário, tenta tratá-lo como lista ou outro tipo
-            report += f"- **Dados de fontes:** {sources_by_type}\n"
-        
+            report += f"- **Dados de Fontes:** {sources_by_type}\n" # Fallback se não for dict
+
         report += "\n---\n\n"
-        
+
         # Adiciona dados de busca web
         web_data = massive_data.get('web_search_data', {})
         if web_data.get('web_results'):
             report += "## DADOS DE BUSCA WEB\n\n"
-            for i, result in enumerate(web_data['web_results'], 1):
-                report += f"**{i}. {result.get('title', 'Sem título')}**  \n"
-                report += f"URL: {result.get('url', 'N/A')}  \n"
-                report += f"Resumo: {result.get('snippet', 'N/A')[:200]}...\n\n"
-        
-        # Adiciona dados sociais
+            report += f"Fontes encontradas: {web_data.get('statistics', {}).get('total_sources', 0)} | URLs únicas: {web_data.get('statistics', {}).get('unique_urls', 0)}\n\n"
+            for i, result in enumerate(web_data['web_results'][:5], 1): # Mostra os 5 primeiros
+                report += f"**{i}. [{result.get('title', 'Sem título')}]({result.get('url', '#')})**  \n"
+                report += f"   Fonte: `{result.get('source', 'N/A')}` | Relevância: {result.get('relevance_score', 'N/A')}\n"
+                report += f"   Resumo: {result.get('snippet', 'N/A')[:200]}...\n\n"
+
+        # Adiciona dados sociais (fallback e Supadata)
         social_data = massive_data.get('social_media_data', {})
-        if social_data.get('success'):
-            report += "## DADOS DE REDES SOCIAIS\n\n"
+        if social_data.get('success') and social_data.get('all_platforms_data'):
+            report += "## DADOS DE REDES SOCIAIS (Fallback + Supadata)\n\n"
             platforms = social_data.get('all_platforms_data', {}).get('platforms', {})
-            
-            # Corrigido: Verifica o tipo de platforms antes de iterar
+            total_social_posts = social_data.get('total_posts', 0)
+            report += f"Total de posts analisados: {total_social_posts}\n\n"
+
             if isinstance(platforms, dict):
                 for platform, data in platforms.items():
                     results = data.get('results', [])
                     if results:
                         report += f"### {platform.title()} ({len(results)} posts)\n\n"
-                        for i, post in enumerate(results[:3], 1):
+                        for i, post in enumerate(results[:3], 1): # Mostra os 3 primeiros por plataforma
                             title = post.get('title', post.get('text', post.get('caption', 'Post sem título')))
-                            report += f"**{i}.** {title[:100]}...\n\n"
+                            author = post.get('author', 'Sem autor')
+                            score = post.get('viral_score', 'N/A')
+                            report += f"**{i}. [{title[:100]}...]({post.get('url', '#')})** por **{author}** (Score Viral: {score})\n"
+                            report += f"   Likes: {post.get('likes', 0)} | Comentários: {post.get('comments', 0)}\n\n"
             elif isinstance(platforms, list):
-                # Se for uma lista, processa cada item
                 for i, platform_data in enumerate(platforms):
                     if isinstance(platform_data, dict):
                         platform_name = platform_data.get('platform', f'Platform_{i}')
@@ -1229,30 +1348,66 @@ class RealSearchOrchestrator:
                             report += f"### {platform_name.title()} ({len(results)} posts)\n\n"
                             for j, post in enumerate(results[:3], 1):
                                 title = post.get('title', post.get('text', post.get('caption', 'Post sem título')))
-                                report += f"**{j}.** {title[:100]}...\n\n"
-        
-        # Adiciona screenshots
-        visual_content = massive_data.get('visual_content', {})
-        if visual_content.get('success'):
-            screenshots = visual_content.get('screenshots', [])
-            if screenshots:
-                report += "## EVIDÊNCIAS VISUAIS\n\n"
-                for i, screenshot in enumerate(screenshots, 1):
+                                author = post.get('author', 'Sem autor')
+                                score = post.get('viral_score', 'N/A')
+                                report += f"**{j}. [{title[:100]}...]({post.get('url', '#')})** por **{author}** (Score Viral: {score})\n"
+                                report += f"   Likes: {post.get('likes', 0)} | Comentários: {post.get('comments', 0)}\n\n"
+
+        # Adiciona dados do Masterclass
+        masterclass_analysis = massive_data.get('masterclass_analysis', {})
+        if masterclass_analysis and not masterclass_analysis.get('error'):
+            report += "## ANÁLISE GOOGLE MASTERCLASS\n\n"
+            report += f"Busca realizada para: `{massive_data.get('query')}`\n"
+            report += f"Plataformas analisadas: `{', '.join(masterclass_analysis.get('platforms_searched', []))}`\n"
+            report += f"Total de posts/vídeos encontrados: {masterclass_analysis.get('total_results', 0)}\n"
+            report += f"Total de screenshots capturados: {masterclass_analysis.get('total_screenshots', 0)}\n\n"
+
+            if masterclass_analysis.get('instagram_posts'):
+                report += "### Instagram (Melhores Posts):\n"
+                for i, post in enumerate(masterclass_analysis['instagram_posts'][:3], 1):
+                    report += f"**{i}. [{post.get('title', '')[:100]}...]({post.get('url', '#')})**\n"
+                    report += f"   Visualizações: {post.get('views', 0):,} | Likes: {post.get('likes', 0):,} | Comentários: {post.get('comments', 0):,}\n\n"
+
+            if masterclass_analysis.get('youtube_videos'):
+                report += "### YouTube (Melhores Vídeos):\n"
+                for i, video in enumerate(masterclass_analysis['youtube_videos'][:3], 1):
+                    report += f"**{i}. [{video.get('title', '')[:100]}...]({video.get('url', '#')})**\n"
+                    report += f"   Canal: {video.get('channel', 'N/A')} | Views: {video.get('views', 0):,} | Likes: {video.get('likes', 0):,}\n\n"
+
+            if masterclass_analysis.get('facebook_posts'):
+                report += "### Facebook (Melhores Posts):\n"
+                for i, post in enumerate(masterclass_analysis['facebook_posts'][:3], 1):
+                    report += f"**{i}. [{post.get('title', '')[:100]}...]({post.get('url', '#')})**\n"
+                    report += f"   Likes: {post.get('likes', 0):,} | Comentários: {post.get('comments', 0):,} | Compartilhamentos: {post.get('shares', 0):,}\n\n"
+
+        # Adiciona screenshots (referências visuais)
+        visual_references = massive_data.get('visual_references', [])
+        if visual_references:
+            report += "## EVIDÊNCIAS VISUAIS (Screenshots)\n\n"
+            for i, ref in enumerate(visual_references, 1):
+                # Tenta obter o caminho do arquivo para a imagem no relatório
+                # Assume que o caminho é relativo ao diretório de análise
+                filepath = ref.get('screenshot_path', ref.get('filepath', ''))
+                if filepath:
+                    # Cria um link markdown para a imagem
+                    # Nota: A exibição de imagens em markdown em alguns ambientes pode depender do contexto
                     report += f"### Screenshot {i}\n"
-                    report += f"**URL:** {screenshot.get('url', 'N/A')}  \n"
-                    report += f"**Título:** {screenshot.get('title', 'N/A')}  \n"
-                    report += f"![Screenshot {i}]({screenshot.get('filepath', '')})  \n\n"
-        
-        # Adiciona contexto da análise
-        context = massive_data.get('context', {})
-        if context:
-            report += "## CONTEXTO DA ANÁLISE\n\n"
-            for key, value in context.items():
-                if value:
-                    report += f"**{key.replace('_', ' ').title()}:** {value}  \n"
-        
+                    report += f"**URL Original:** {ref.get('url', 'N/A')}\n"
+                    report += f"**Título/Descrição:** {ref.get('title', 'N/A')}\n"
+                    report += f"![Screenshot {i}]({filepath})  \n\n"
+                else:
+                    report += f"**Screenshot {i} (Caminho não disponível):** {ref.get('url', 'N/A')}\n\n"
+
+        # Adiciona erros encontrados
+        errors = massive_data.get('errors', [])
+        if errors:
+            report += "## ERROS ENCONTRADOS DURANTE A COLETA\n\n"
+            for i, error in enumerate(errors, 1):
+                report += f"**{i}. Fonte:** {error.get('source', 'Desconhecida')}\n"
+                report += f"   **Mensagem:** {error.get('message', 'Erro não especificado')}\n\n"
+
         report += f"\n---\n\n*Relatório gerado automaticamente em {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}*"
-        
+
         return report
 
 # Instância global

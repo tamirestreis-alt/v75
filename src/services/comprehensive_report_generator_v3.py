@@ -21,7 +21,7 @@ class FinalReportCompiler:
 
     def __init__(self):
         """Inicializa o compilador"""
-        self.session_dir = "analyses_data/files"
+        self.session_dir = "analyses_data"
         self.modules_order = [
             'avatars',
             'drivers_mentais', 
