@@ -412,6 +412,9 @@ class GoogleSocialMasterclassExtractor:
             await self._extract_youtube_metrics(page, metrics)
         elif platform == 'facebook':
             await self._extract_facebook_metrics(page, metrics)
+        else:
+            # Fallback para outras plataformas usando seletores genéricos
+            await self._extract_generic_metrics(page, platform, metrics)
 
         return metrics
 
@@ -596,8 +599,8 @@ class GoogleSocialMasterclassExtractor:
         except Exception as e:
             logger.debug(f"⚠️ Erro ao extrair métricas Facebook: {e}")
 
-    def _parse_engagement_number(self, text: str) -> int:
-
+    async def _extract_generic_metrics(self, page: Page, platform: str, metrics: Dict[str, int]) -> None:
+        """Extrai métricas usando seletores genéricos por plataforma"""
         try:
             selectors = self.engagement_selectors.get(platform, {})
 
@@ -651,8 +654,6 @@ class GoogleSocialMasterclassExtractor:
 
         except Exception as e:
             logger.error(f"❌ Erro ao extrair métricas: {e}")
-
-        return metrics
 
     def _parse_engagement_number(self, text: str) -> int:
         """Converte texto de engajamento em número"""
