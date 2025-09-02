@@ -159,12 +159,17 @@ class ViralContentAnalyzer:
                             if content.get('url'):
                                 urls_for_screenshots.append(content['url'])
 
-                        # Captura screenshots dos posts virais
+                        # Captura screenshots dos posts virais ANTES de fechar o browser
                         if urls_for_screenshots:
                             try:
-                                screenshots = await extractor.capture_screenshots(urls_for_screenshots, session_id)
-                                analysis_results['screenshots_captured'] = screenshots
-                                logger.info(f"📸 {len(screenshots)} screenshots de posts virais capturados")
+                                # Verifica se o browser ainda está ativo
+                                if extractor.context:
+                                    screenshots = await extractor.capture_screenshots(urls_for_screenshots, session_id)
+                                    analysis_results['screenshots_captured'] = screenshots
+                                    logger.info(f"📸 {len(screenshots)} screenshots de posts virais capturados")
+                                else:
+                                    logger.warning("⚠️ Browser context não disponível para screenshots")
+                                    analysis_results['screenshots_captured'] = []
                             except Exception as screenshot_error:
                                 logger.warning(f"⚠️ Erro ao capturar screenshots: {screenshot_error}")
                                 analysis_results['screenshots_captured'] = []
@@ -175,15 +180,27 @@ class ViralContentAnalyzer:
 
                         logger.info(f"✅ Playwright: {analysis_results['total_viral_identified']} posts virais identificados")
 
+                        # Fecha browser APÓS capturar screenshots
+                        try:
+                            await extractor.stop_browser()
+                        except Exception as close_error:
+                            logger.warning(f"⚠️ Erro ao fechar browser: {close_error}")
+
                         return analysis_results
                     else:
                         logger.warning("⚠️ Playwright não retornou conteúdo viral válido")
-                finally:
-                    # Fecha browser corretamente
+                        # Fecha browser se não há conteúdo válido
+                        try:
+                            await extractor.stop_browser()
+                        except Exception as close_error:
+                            logger.warning(f"⚠️ Erro ao fechar browser: {close_error}")
+                except Exception as extractor_error:
+                    logger.error(f"❌ Erro no extrator Playwright: {extractor_error}")
+                    # Fecha browser em caso de erro
                     try:
                         await extractor.stop_browser()
                     except Exception as close_error:
-                        logger.warning(f"⚠️ Erro ao fechar browser: {close_error}")
+                        logger.warning(f"⚠️ Erro ao fechar browser após erro: {close_error}")
 
                         # O código abaixo parece redundante com o return acima. Removi para evitar confusão.
                         # if urls_for_screenshots:
