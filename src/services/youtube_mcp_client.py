@@ -32,13 +32,14 @@ class YouTubeMCPClient:
         if self.is_available:
             logger.info("✅ YouTube MCP Client ATIVO")
         else:
-            logger.warning("⚠️ YouTube API não configurada - usando fallback")
+            logger.warning("⚠️ YouTube API não configurada - sem simulação e sem fallback")
 
     async def search_videos(self, query: str, max_results: int = 25) -> Dict[str, Any]:
         """Busca vídeos no YouTube"""
         try:
             if not self.is_available:
-                return self._create_fallback_youtube_data(query, max_results)
+                # Sem simulação quando API não está disponível
+                return {"success": False, "provider": "youtube", "videos": [], "total_found": 0, "query": query, "message": "YouTube API ausente"}
 
             logger.info(f"🎥 Buscando no YouTube: {query}")
 
@@ -62,12 +63,12 @@ class YouTubeMCPClient:
                 data = response.json()
                 return self._process_youtube_results(data, query)
             else:
-                logger.warning(f"⚠️ YouTube API erro {response.status_code} - usando fallback")
-                return self._create_fallback_youtube_data(query, max_results)
+                logger.warning(f"⚠️ YouTube API erro {response.status_code}")
+                return {"success": False, "provider": "youtube", "videos": [], "total_found": 0, "query": query, "message": f"HTTP {response.status_code}"}
 
         except Exception as e:
             logger.error(f"❌ Erro YouTube: {e}")
-            return self._create_fallback_youtube_data(query, max_results)
+            return {"success": False, "provider": "youtube", "videos": [], "total_found": 0, "query": query, "message": str(e)}
 
     def _process_youtube_results(self, data: Dict[str, Any], query: str) -> Dict[str, Any]:
         """Processa resultados do YouTube"""
