@@ -139,39 +139,51 @@ class ViralContentAnalyzer:
                 query = search_results.get('query', 'viral content')
                 logger.info(f"🎭 Usando extrator Playwright para '{query}'")
 
-                async with playwright_social_extractor as extractor:
+                # Usar context manager corretamente
+                extractor = playwright_social_extractor
+                try:
+                    await extractor.start_browser()
                     playwright_results = await extractor.extract_viral_content(
                         query,
-                        platforms=['instagram', 'facebook', 'youtube', 'tiktok', 'twitter'],
+                        session_id,
                         max_items=max_captures
                     )
 
                     if playwright_results and playwright_results.get('viral_content'):
                         analysis_results['viral_content_identified'] = playwright_results['viral_content']
-                        analysis_results['platform_analysis'] = playwright_results['platforms_data']
+                        analysis_results['platform_analysis'] = playwright_results.get('platforms_data', {})
 
                         # Captura screenshots das imagens virais
                         urls_for_screenshots = []
-                        for content in playwright_results['viral_content'][:15]:  # Máximo 15 screenshots
-                            if content.get('image_url'):
-                                urls_for_screenshots.append(content['image_url'])
-                            elif content.get('thumbnail_url'):
-                                urls_for_screenshots.append(content['thumbnail_url'])
+                        for content in playwright_results['viral_content'][:10]:  # Máximo 10 screenshots
+                            if content.get('url'):
+                                urls_for_screenshots.append(content['url'])
 
                         # Captura screenshots dos posts virais
                         if urls_for_screenshots:
-                            screenshots = await extractor.capture_screenshots(urls_for_screenshots, session_id)
-                            analysis_results['screenshots'] = screenshots
-                            logger.info(f"📸 {len(screenshots)} screenshots de imagens virais capturados")
+                            try:
+                                screenshots = await extractor.capture_screenshots(urls_for_screenshots, session_id)
+                                analysis_results['screenshots_captured'] = screenshots
+                                logger.info(f"📸 {len(screenshots)} screenshots de posts virais capturados")
+                            except Exception as screenshot_error:
+                                logger.warning(f"⚠️ Erro ao capturar screenshots: {screenshot_error}")
+                                analysis_results['screenshots_captured'] = []
 
                         # Atualiza estatísticas
                         analysis_results['viral_posts'] = playwright_results['viral_content']
                         analysis_results['total_viral_identified'] = len(playwright_results['viral_content'])
-                        analysis_results['screenshots_captured'] = len(analysis_results.get('screenshots', []))
 
-                        logger.info(f"✅ Playwright: {analysis_results['total_viral_identified']} posts virais, {analysis_results['screenshots_captured']} screenshots")
+                        logger.info(f"✅ Playwright: {analysis_results['total_viral_identified']} posts virais identificados")
 
                         return analysis_results
+                    else:
+                        logger.warning("⚠️ Playwright não retornou conteúdo viral válido")
+                finally:
+                    # Fecha browser corretamente
+                    try:
+                        await extractor.stop_browser()
+                    except Exception as close_error:
+                        logger.warning(f"⚠️ Erro ao fechar browser: {close_error}")
 
                         # O código abaixo parece redundante com o return acima. Removi para evitar confusão.
                         # if urls_for_screenshots:
@@ -510,62 +522,70 @@ class ViralContentAnalyzer:
                 screenshots_dir = Path(f"analyses_data/files/{session_id}")
                 screenshots_dir.mkdir(parents=True, exist_ok=True)
 
-                for i, content in enumerate(viral_content, 1):
+                # Filtra URLs válidas
+                valid_content = []
+                for content in viral_content:
+                    url = content.get('url', '')
+                    if url and url.startswith('http') and len(url) > 10: # Verifica se a URL é válida e tem um comprimento mínimo
+                        valid_content.append(content)
+
+                if not valid_content:
+                    logger.warning("⚠️ Nenhuma URL válida encontrada para screenshots")
+                    return screenshots # Retorna lista vazia se não houver URLs válidas
+
+                for i, content in enumerate(valid_content[:10], 1): # Limita a 10 screenshots para controle de performance
                     try:
                         url = content.get('url', '')
                         platform = content.get('platform', 'web')
+                        title = content.get('title', 'Sem título')[:60] # Limita o título para logs
 
-                        if not url or not url.startswith(('http://', 'https://')):
-                            logger.warning(f"Skipping invalid URL: {url}")
-                            continue
+                        logger.info(f"📸 Capturando screenshot {i}/{min(len(valid_content), 10)}: {title} ({url})")
 
-                        logger.info(f"📸 Capturando screenshot {i}/{len(viral_content)}: {content.get('title', 'Sem título')}")
+                        await page.goto(url, wait_until="domcontentloaded", timeout=60000) # Aumenta o timeout para carregar páginas complexas
 
-                        await page.goto(url, wait_until="domcontentloaded", timeout=60000) # Aumenta o timeout
-
-                        # Adiciona lógica específica para Instagram/Facebook
+                        # Adiciona lógica específica para Instagram/Facebook para lidar com pop-ups e carregar conteúdo
                         if platform == 'instagram':
                             # Tenta fechar pop-up de login se existir
                             try:
                                 await page.locator("//button[text()='Agora não']").click(timeout=5000)
-                                logger.info("Fechou pop-up de login do Instagram")
+                                logger.info(f"Fechou pop-up de login do Instagram para {url}")
                             except Exception:
                                 pass # Pop-up não apareceu ou já foi fechado
 
-                            # Espera por elementos de post (ex: imagem principal ou vídeo)
+                            # Espera por elementos de post (ex: imagem principal ou vídeo) para garantir que o conteúdo principal foi carregado
                             try:
                                 await page.locator("//img[contains(@srcset, 's150x150')] | //video").wait_for(timeout=10000)
                             except Exception:
-                                logger.warning(f"Não encontrou elementos de post no Instagram para {url}")
+                                logger.warning(f"Não encontrou elementos de post no Instagram para {url}. Screenshot pode estar incompleto.")
 
                         elif platform == 'facebook':
                             # Tenta fechar pop-up de cookies/login
                             try:
                                 await page.locator("//div[@aria-label='Aceitar todos os cookies'] | //a[@data-testid='login_button']").click(timeout=5000)
-                                logger.info("Fechou pop-up de cookies/login do Facebook")
+                                logger.info(f"Fechou pop-up de cookies/login do Facebook para {url}")
                             except Exception:
                                 pass
                             # Espera por elementos de post (ex: post feed)
                             try:
                                 await page.locator("//div[@role='feed'] | //div[@data-pagelet='ProfileCometPostCollection']").wait_for(timeout=10000)
                             except Exception:
-                                logger.warning(f"Não encontrou elementos de post no Facebook para {url}")
+                                logger.warning(f"Não encontrou elementos de post no Facebook para {url}. Screenshot pode estar incompleto.")
 
                         # Aguarda carregamento geral e scroll para carregar conteúdo lazy-loaded
                         await page.evaluate("window.scrollTo(0, document.body.scrollHeight/2);")
-                        await asyncio.sleep(self.screenshot_config['scroll_pause'])
-                        await page.evaluate("window.scrollTo(0, 0);")
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(self.screenshot_config['scroll_pause']) # Pausa para carregar conteúdo lazy
+                        await page.evaluate("window.scrollTo(0, 0);") # Volta para o topo
+                        await asyncio.sleep(1) # Pequena pausa adicional
 
                         page_title = await page.title() or content.get('title', 'Sem título')
-                        current_url = page.url
+                        current_url = page.url # URL final após redirecionamentos
 
                         filename = f"screenshot_{platform}_{i:03d}"
                         screenshot_path = screenshots_dir / f"{filename}.png"
 
-                        await page.screenshot(path=str(screenshot_path), full_page=True)
+                        await page.screenshot(path=str(screenshot_path), full_page=True) # Captura a página inteira
 
-                        if screenshot_path.exists() and screenshot_path.stat().st_size > 0:
+                        if screenshot_path.exists() and screenshot_path.stat().st_size > 0: # Verifica se o arquivo foi criado e não está vazio
                             logger.info(f"✅ Screenshot salvo: {screenshot_path}")
                             screenshots.append({
                                 'success': True,
@@ -576,22 +596,22 @@ class ViralContentAnalyzer:
                                 'viral_score': content.get('viral_score', 0),
                                 'filename': f"{filename}.png",
                                 'filepath': str(screenshot_path),
-                                'relative_path': str(screenshot_path.relative_to(Path('analyses_data'))),
+                                'relative_path': str(screenshot_path.relative_to(Path('analyses_data'))), # Caminho relativo para relatórios
                                 'filesize': screenshot_path.stat().st_size,
                                 'timestamp': datetime.now().isoformat(),
-                                'content_metrics': {
-                                    'likes': content.get('likes', 0),
-                                    'comments': content.get('comments', 0),
+                                'content_metrics': { # Inclui métricas relevantes para o relatório
+                                    'likes': content.get('likes', 0) or content.get('like_count', 0),
+                                    'comments': content.get('comments', 0) or content.get('comment_count', 0),
                                     'shares': content.get('shares', 0),
                                     'views': content.get('view_count', 0) # Para YouTube/TikTok
                                 }
                             })
                         else:
-                            raise Exception("Screenshot não foi criado ou está vazio")
+                            raise Exception("Screenshot não foi criado ou está vazio.")
 
                     except Exception as e:
                         logger.error(f"❌ Erro ao capturar screenshot de {url}: {e}")
-                        screenshots.append({
+                        screenshots.append({ # Adiciona registro de erro na lista de screenshots
                             'success': False,
                             'url': url,
                             'error': str(e),

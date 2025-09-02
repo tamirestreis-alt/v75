@@ -755,3 +755,7 @@ class InstagramScreenshotAnalyzer:
 
 # Instância global
 instagram_screenshot_analyzer = InstagramScreenshotAnalyzer()
+
+def get_viral_content_analyzer():
+    """Retorna a instância global do Instagram Screenshot Analyzer"""
+    return instagram_screenshot_analyzer
